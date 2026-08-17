@@ -1,4 +1,6 @@
 
+# skp a fbx
+# https://anyconv.com/skp-converter/
 
 .venv:
 	python3 -m venv .venv

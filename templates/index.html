@@ -2,125 +2,164 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <title>Tour Virtual - Meta Quest 3</title>
+  <title>Galería de Tours Virtuales - Meta Quest 3</title>
   
-  <!-- Carga local offline desde tu servidor -->
   <script src="/static/js/aframe.min.js"></script>
   <script src="/static/js/aframe-blink-controls.min.js"></script>
   
   <style>
     #upload-container {
       position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-      background: rgba(0, 0, 0, 0.6); display: flex;
+      background: rgba(0, 0, 0, 0.75); display: flex;
       justify-content: center; align-items: center; z-index: 99999;
       font-family: sans-serif;
     }
     .panel {
       background: white; padding: 30px; border-radius: 16px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; max-width: 400px; width: 90%;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; max-width: 450px; width: 90%;
     }
     .btn {
       background: #0078ff; color: white; border: none; padding: 12px 24px;
-      border-radius: 8px; cursor: pointer; margin-top: 15px; font-weight: bold; font-size: 16px; width: 100%;
+      border-radius: 8px; cursor: pointer; margin-top: 10px; font-weight: bold; font-size: 15px; width: 100%;
     }
     .btn:hover { background: #0056b3; }
-    #fileInput { margin: 15px 0; font-size: 14px; }
     #loading { display: none; color: #ff6a00; font-weight: bold; margin-top: 15px; }
+    .lista-tours {
+      margin-top: 20px; max-height: 200px; overflow-y: auto;
+      text-align: left; border: 1px solid #ddd; border-radius: 8px; padding: 5px;
+    }
+    .item-tour {
+      padding: 10px; margin: 5px 0; background: #f8f9fa; border-radius: 6px;
+      cursor: pointer; font-weight: bold; color: #333; display: flex; justify-content: space-between; align-items: center;
+      transition: background 0.2s;
+    }
+    .item-tour:hover { background: #e2e6ea; color: #0056b3; }
+    .badge-vr { background: #28a745; color: white; padding: 2px 6px; border-radius: 4px; font-size: 11px; }
   </style>
 </head>
 <body>
 
-  <!-- Capa del menú de carga externo -->
   <div id="upload-container">
     <div class="panel">
-      <h2 style="margin-top:0;">Recorridos VR</h2>
-      <p style="color: #666; font-size: 14px;">Sube tu archivo .glb optimizado</p>
-      <input type="file" id="fileInput" accept=".glb"><br>
-      <button class="btn" id="uploadBtn">Cargar Tour Inmersivo</button>
-      <div id="loading">Subiendo y preparando escenario 3D...</div>
+      <h2 style="margin-top:0; color:#111;">Mis Recorridos VR</h2>
+      <p style="color: #666; font-size: 13px; margin-bottom:5px;">Subir nuevo recorrido (.glb):</p>
+      <input type="file" id="fileInput" accept=".glb" style="font-size:12px;"><br>
+      <button class="btn" id="uploadBtn">Subir al Servidor</button>
+      <div id="loading">Subiendo y registrando modelo arquitectónico...</div>
+      
+      <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
+      <h4 style="margin:0; text-align:left; color:#444;">Selecciona un Tour Disponible:</h4>
+      <div class="lista-tours" id="listaTours">
+        <p style="color:#999; text-align:center; font-size:13px; padding:10px;">Cargando catálogo...</p>
+      </div>
     </div>
   </div>
 
-  <!-- Escena WebXR pura con ID para que el script la encuentre directamente -->
   <a-scene id="escena3d" webxr="requiredFeatures: local-floor;" renderer="antialias: true; colorManagement: true; precision: medium;">
-    
-    <!-- Almacén de recursos oficial de A-Frame -->
     <a-assets id="recursos"></a-assets>
-
-    <!-- Malla de suelo invisible para teleportación -->
     <a-plane id="suelo-teleport" class="nav-mesh" position="0 0.01 0" rotation="-90 0 0" width="500" height="500" visible="false"></a-plane>
 
-    <!-- Cámara y controladores para Meta Quest 3 -->
     
       <a-camera id="camera" look-controls position="0 1.6 0"></a-camera>
       
       
-      
-      
     
 
-    <a-light type="ambient" color="#FFF" intensity="0.85"></a-light>
+    <!-- Iluminación fuerte reforzada para prevenir oscuridad total -->
+    <a-light type="ambient" color="#FFFFFF" intensity="1.2"></a-light>
+    <a-light type="directional" color="#FFFFFF" intensity="0.8" position="-1 2 1"></a-light>
   </a-scene>
 
   <script>
+    async function actualizarCatalogo() {
+      const listaDiv = document.getElementById('listaTours');
+      try {
+        const res = await fetch('/models');
+        const data = await res.json();
+        
+        if (data.success && data.models.length > 0) {
+          listaDiv.innerHTML = '';
+          data.models.forEach(nombreArchivo => {
+            const item = document.createElement('div');
+            item.className = 'item-tour';
+            const nombreLimpio = nombreArchivo.replace(/_/g, " ").replace(".glb", "");
+            item.innerHTML = `<span>📂 ${nombreLimpio}</span> <span class="badge-vr">Ver en VR</span>`;
+            item.onclick = () => iniciarTour(`/static/models/${nombreArchivo}`);
+            listaDiv.appendChild(item);
+          });
+        } else {
+          listaDiv.innerHTML = '<p style="color:#999; text-align:center; font-size:13px; padding:10px;">No hay tours subidos aún.</p>';
+        }
+      } catch (err) {
+        listaDiv.innerHTML = '<p style="color:#dc3545; text-align:center; font-size:13px; padding:10px;">Error al conectar catálogo.</p>';
+      }
+    }
+
+    function iniciarTour(urlModelo) {
+      const escena = document.getElementById('escena3d');
+      const almacenRecursos = document.getElementById('recursos');
+      
+      if (escena && almacenRecursos) {
+        document.getElementById('upload-container').style.display = 'none';
+
+        const nuevoAsset = document.createElement('a-asset-item');
+        nuevoAsset.setAttribute('id', 'modelo-activo');
+        nuevoAsset.setAttribute('src', urlModelo);
+        almacenRecursos.appendChild(nuevoAsset);
+
+        const nuevaEntidad = document.createElement('a-entity');
+        nuevaEntidad.setAttribute('gltf-model', '#modelo-activo');
+        // Posición y escala neutra garantizada para evitar que quede oculto
+        nuevaEntidad.setAttribute('position', '0 0 0');
+        nuevaEntidad.setAttribute('scale', '1 1 1');
+        
+        // Evento de depuración por si el archivo falla al parsear en WebGL
+        nuevaEntidad.addEventListener('model-loaded', () => {
+          console.log("Modelo .glb renderizado correctamente en la escena.");
+        });
+        nuevaEntidad.addEventListener('model-error', (evt) => {
+          console.error("Error al cargar el archivo GLB en A-Frame:", evt.detail);
+          alert("El archivo .glb está corrupto o es incompatible con WebGL.");
+        });
+
+        escena.appendChild(nuevaEntidad);
+        alert("¡Iniciando inmersión! Entra a modo VR.");
+      } else {
+        alert("Error crítico del motor 3D.");
+      }
+    }
+
     document.getElementById('uploadBtn').addEventListener('click', async function (e) {
       e.preventDefault();
-      
       const fileInput = document.getElementById('fileInput');
-      const boton = this;
-      
-      if (!fileInput.files || fileInput.files.length === 0) {
-        return alert("Por favor, selecciona tu archivo .glb primero.");
-      }
+      if (!fileInput.files || fileInput.files.length === 0) return alert("Selecciona un archivo .glb primero.");
 
       const formData = new FormData();
       formData.append('file', fileInput.files[0]);
 
       document.getElementById('loading').style.display = 'block';
-      boton.disabled = true;
+      this.disabled = true;
 
       try {
         const respuesta = await fetch('/upload', { method: 'POST', body: formData });
         const datos = await respuesta.json();
 
         if (datos.success) {
-          // Buscamos la escena, la cual es el nodo raíz inamovible de A-Frame
-          const escena = document.getElementById('escena3d');
-          const almacenRecursos = document.getElementById('recursos');
-          
-          if (escena && almacenRecursos) {
-            // 1. Ocultar el panel de carga
-            document.getElementById('upload-container').style.display = 'none';
-
-            // 2. Crear el recurso dinámico dentro del almacén de A-Frame
-            const nuevoAsset = document.createElement('a-asset-item');
-            nuevoAsset.setAttribute('id', 'modelo-arquitectonico');
-            nuevoAsset.setAttribute('src', datos.model_url);
-            almacenRecursos.appendChild(nuevoAsset);
-
-            // 3. Crear e inyectar la entidad final directamente en la escena activa
-            const nuevaEntidad = document.createElement('a-entity');
-            nuevaEntidad.setAttribute('gltf-model', '#modelo-arquitectonico');
-            nuevaEntidad.setAttribute('position', '0 0 0');
-            escena.appendChild(nuevaEntidad);
-
-            alert("¡Modelo inyectado con éxito en el motor 3D! Presiona 'Enter VR' abajo a la derecha.");
-          } else {
-            alert("Error: El lienzo de renderizado de A-Frame no respondió.");
-            boton.disabled = false;
-          }
+          alert("¡Archivo subido exitosamente al catálogo!");
+          fileInput.value = '';
+          actualizarCatalogo();
         } else {
-          alert("Error en el servidor: " + datos.error);
-          boton.disabled = false;
+          alert("Error: " + datos.error);
         }
       } catch (error) {
-        console.error("Fallo técnico de red:", error);
-        alert("Error de comunicación con el backend.");
-        boton.disabled = false;
+        alert("Error de red al subir el archivo.");
       } finally {
         document.getElementById('loading').style.display = 'none';
+        this.disabled = false;
       }
     });
+
+    document.addEventListener('DOMContentLoaded', actualizarCatalogo);
   </script>
 </body>
 </html>

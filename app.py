@@ -1,17 +1,15 @@
 import os
 from fastapi import FastAPI, UploadFile, File, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 
-# Configuración obligatoria para evitar fallos de globalización en Linux
+# Evitar fallos de globalización en Linux/Fly.io
 os.environ["DOTNET_SYSTEM_GLOBALIZATION_INVARIANT"] = "1"
 
 app = FastAPI()
 
-# Middleware CORS: Permite que el frontend se comunique con el backend 
-# sin bloqueos de seguridad del navegador (Crucial para desarrollo local y Ngrok)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,42 +18,49 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configurar y asegurar la existencia de las carpetas de almacenamiento
 UPLOAD_FOLDER = "static/models"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Montar los archivos estáticos y las plantillas HTML
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    """Sirve la interfaz web del Tour Virtual con el visor A-Frame"""
+    """Carga la interfaz del Tour Virtual"""
     return templates.TemplateResponse("index.html", {"request": request})
+
+
+@app.get("/models")
+async def list_models():
+    """Escanea la carpeta del servidor y devuelve una lista de archivos .glb"""
+    try:
+        archivos = [f for f in os.listdir(UPLOAD_FOLDER) if f.lower().endswith('.glb')]
+        return {"success": True, "models": archivos}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
-    """Recibe el archivo .glb optimizado y lo almacena para las Meta Quest 3"""
-    # Validación estricta del formato web 3D binario
+    """Recibe y guarda el archivo .glb con su nombre original"""
     if not file.filename.lower().endswith('.glb'):
-        return {"success": False, "error": "Por favor, sube un archivo en formato binario .glb"}
+        return {"success": False, "error": "Por favor, sube un archivo binario .glb"}
     
-    # Construir la ruta de guardado definitiva
-    file_path = os.path.join(UPLOAD_FOLDER, file.filename)
+    # Limpiamos el nombre de espacios para evitar fallos de URL en el navegador
+    safe_filename = file.filename.replace(" ", "_")
+    file_path = os.path.join(UPLOAD_FOLDER, safe_filename)
     
     try:
-        # Guardar el archivo recibido en el almacenamiento del servidor
         with open(file_path, "wb") as buffer:
             buffer.write(await file.read())
             
         return {
             "success": True, 
-            "model_url": f"/static/models/{file.filename}"
+            "model_url": f"/static/models/{safe_filename}",
+            "filename": safe_filename
         }
     except Exception as e:
-        # Limpieza en caso de una subida corrupta o incompleta
         if os.path.exists(file_path):
             os.remove(file_path)
-        return {"success": False, "error": f"Error al guardar el archivo: {str(e)}"}
+        return {"success": False, "error": f"Error al guardar: {str(e)}"}

@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Tour Virtual - Meta Quest 3</title>
+  
+  <!-- Carga local offline desde tu servidor -->
+  <script src="/static/js/aframe.min.js"></script>
+  <script src="/static/js/aframe-blink-controls.min.js"></script>
+  
+  <style>
+    #upload-container {
+      position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+      background: rgba(0, 0, 0, 0.6); display: flex;
+      justify-content: center; align-items: center; z-index: 99999;
+      font-family: sans-serif;
+    }
+    .panel {
+      background: white; padding: 30px; border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; max-width: 400px; width: 90%;
+    }
+    .btn {
+      background: #0078ff; color: white; border: none; padding: 12px 24px;
+      border-radius: 8px; cursor: pointer; margin-top: 15px; font-weight: bold; font-size: 16px; width: 100%;
+    }
+    .btn:hover { background: #0056b3; }
+    #fileInput { margin: 15px 0; font-size: 14px; }
+    #loading { display: none; color: #ff6a00; font-weight: bold; margin-top: 15px; }
+  </style>
+</head>
+<body>
+
+  <!-- Capa del menú de carga externo -->
+  <div id="upload-container">
+    <div class="panel">
+      <h2 style="margin-top:0;">Recorridos VR</h2>
+      <p style="color: #666; font-size: 14px;">Sube tu archivo .glb optimizado</p>
+      <input type="file" id="fileInput" accept=".glb"><br>
+      <button class="btn" id="uploadBtn">Cargar Tour Inmersivo</button>
+      <div id="loading">Subiendo y preparando escenario 3D...</div>
+    </div>
+  </div>
+
+  <!-- Escena WebXR pura con ID para que el script la encuentre directamente -->
+  <a-scene id="escena3d" webxr="requiredFeatures: local-floor;" renderer="antialias: true; colorManagement: true; precision: medium;">
+    
+    <!-- Almacén de recursos oficial de A-Frame -->
+    <a-assets id="recursos"></a-assets>
+
+    <!-- Malla de suelo invisible para teleportación -->
+    <a-plane id="suelo-teleport" class="nav-mesh" position="0 0.01 0" rotation="-90 0 0" width="500" height="500" visible="false"></a-plane>
+
+    <!-- Cámara y controladores para Meta Quest 3 -->
+    
+      <a-camera id="camera" look-controls position="0 1.6 0"></a-camera>
+      
+      
+      
+      
+    
+
+    <a-light type="ambient" color="#FFF" intensity="0.85"></a-light>
+  </a-scene>
+
+  <script>
+    document.getElementById('uploadBtn').addEventListener('click', async function (e) {
+      e.preventDefault();
+      
+      const fileInput = document.getElementById('fileInput');
+      const boton = this;
+      
+      if (!fileInput.files || fileInput.files.length === 0) {
+        return alert("Por favor, selecciona tu archivo .glb primero.");
+      }
+
+      const formData = new FormData();
+      formData.append('file', fileInput.files[0]);
+
+      document.getElementById('loading').style.display = 'block';
+      boton.disabled = true;
+
+      try {
+        const respuesta = await fetch('/upload', { method: 'POST', body: formData });
+        const datos = await respuesta.json();
+
+        if (datos.success) {
+          // Buscamos la escena, la cual es el nodo raíz inamovible de A-Frame
+          const escena = document.getElementById('escena3d');
+          const almacenRecursos = document.getElementById('recursos');
+          
+          if (escena && almacenRecursos) {
+            // 1. Ocultar el panel de carga
+            document.getElementById('upload-container').style.display = 'none';
+
+            // 2. Crear el recurso dinámico dentro del almacén de A-Frame
+            const nuevoAsset = document.createElement('a-asset-item');
+            nuevoAsset.setAttribute('id', 'modelo-arquitectonico');
+            nuevoAsset.setAttribute('src', datos.model_url);
+            almacenRecursos.appendChild(nuevoAsset);
+
+            // 3. Crear e inyectar la entidad final directamente en la escena activa
+            const nuevaEntidad = document.createElement('a-entity');
+            nuevaEntidad.setAttribute('gltf-model', '#modelo-arquitectonico');
+            nuevaEntidad.setAttribute('position', '0 0 0');
+            escena.appendChild(nuevaEntidad);
+
+            alert("¡Modelo inyectado con éxito en el motor 3D! Presiona 'Enter VR' abajo a la derecha.");
+          } else {
+            alert("Error: El lienzo de renderizado de A-Frame no respondió.");
+            boton.disabled = false;
+          }
+        } else {
+          alert("Error en el servidor: " + datos.error);
+          boton.disabled = false;
+        }
+      } catch (error) {
+        console.error("Fallo técnico de red:", error);
+        alert("Error de comunicación con el backend.");
+        boton.disabled = false;
+      } finally {
+        document.getElementById('loading').style.display = 'none';
+      }
+    });
+  </script>
+</body>
+</html>

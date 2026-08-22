@@ -21,7 +21,9 @@ app.add_middleware(
 UPLOAD_FOLDER = "static/models"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-APP_VERSION = os.getenv("APP_VERSION") or os.getenv("VRTOUR_VERSION") or os.getenv("GIT_SHA") or "dev"
+from datetime import datetime
+
+APP_VERSION = os.getenv("APP_VERSION") or os.getenv("VRTOUR_VERSION") or os.getenv("GIT_SHA") or f"dev-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}"
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")

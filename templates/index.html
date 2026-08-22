@@ -306,18 +306,27 @@
         this.rig = this.el;
         this.gpLeftIndex = null;
         this.gpRightIndex = null;
+        this.xrSessionActive = false;
         this.keyboardState = { left: false, right: false, up: false, down: false, w: false, a: false, s: false, d: false };
 
         const left = document.getElementById('leftController');
         const right = document.getElementById('rightController');
+        const sceneEl = document.getElementById('escena3d');
+
+        const setAxisForTarget = (target, x, y) => {
+          const safeX = Number.isFinite(x) ? x : 0;
+          const safeY = Number.isFinite(y) ? y : 0;
+          if (target === 'left') this.rotateAxis = [safeX, safeY];
+          else this.moveAxis = [safeX, safeY];
+        };
 
         const toAxis = (value) => {
           if (!value && value !== 0) return [0, 0];
-          if (Array.isArray(value)) return [value[0] || 0, value[1] || 0];
+          if (Array.isArray(value)) return [Number(value[0]) || 0, Number(value[1]) || 0];
           if (typeof value === 'object') {
             const x = value.x !== undefined ? value.x : (value[0] !== undefined ? value[0] : 0);
             const y = value.y !== undefined ? value.y : (value[1] !== undefined ? value[1] : 0);
-            return [x, y];
+            return [Number(x) || 0, Number(y) || 0];
           }
           return [0, 0];
         };
@@ -326,14 +335,48 @@
           const detail = evt && evt.detail ? evt.detail : {};
           const source = detail.axis || detail.axes || evt.axes || detail;
           const axes = toAxis(source);
-          const x = axes[0] || 0;
-          const y = axes[1] || 0;
-          if (target === 'left') this.rotateAxis = [x, y];
-          else this.moveAxis = [x, y];
+          setAxisForTarget(target, axes[0], axes[1]);
+        };
+
+        const syncGamepads = () => {
+          if (!navigator.getGamepads) return;
+          const gps = navigator.getGamepads();
+          let leftFound = false;
+          let rightFound = false;
+          for (let i = 0; i < gps.length; i++) {
+            const gp = gps[i];
+            if (!gp || !gp.axes) continue;
+            const id = (gp.id || '').toLowerCase();
+            const hand = gp.hand || gp.handedness || (id.includes('left') ? 'left' : (id.includes('right') ? 'right' : null));
+            const axX = gp.axes.length >= 4 ? gp.axes[2] : gp.axes[0];
+            const axY = gp.axes.length >= 4 ? gp.axes[3] : gp.axes[1];
+            if ((hand === 'left' || (!leftFound && !rightFound && this.gpLeftIndex === null)) && !leftFound) {
+              this.gpLeftIndex = i;
+              leftFound = true;
+              this.rotateAxis = [Number(axX) || 0, Number(axY) || 0];
+              continue;
+            }
+            if ((hand === 'right' || (!rightFound && i !== this.gpLeftIndex)) && !rightFound) {
+              this.gpRightIndex = i;
+              rightFound = true;
+              this.moveAxis = [Number(axX) || 0, Number(axY) || 0];
+            }
+          }
         };
 
         if (left) left.addEventListener('axismove', e => onAxis(e, 'left'));
         if (right) right.addEventListener('axismove', e => onAxis(e, 'right'));
+
+        if (sceneEl) {
+          sceneEl.addEventListener('enter-vr', () => { this.xrSessionActive = true; });
+          sceneEl.addEventListener('exit-vr', () => { this.xrSessionActive = false; });
+        }
+
+        window.addEventListener('gamepadconnected', () => { syncGamepads(); });
+        window.addEventListener('gamepaddisconnected', () => {
+          this.gpLeftIndex = null;
+          this.gpRightIndex = null;
+        });
 
         const applyKeyboardState = (event, pressed) => {
           const key = event.key ? event.key.toLowerCase() : '';
@@ -437,7 +480,7 @@
           my = kbUp + kbDown;
         }
 
-        if (Math.abs(rx) < 0.01 && Math.abs(ry) < 0.01 && Math.abs(mx) < 0.01 && Math.abs(my) < 0.01 && navigator.getGamepads) {
+        if (navigator.getGamepads && (Math.abs(rx) < 0.01 && Math.abs(ry) < 0.01 && Math.abs(mx) < 0.01 && Math.abs(my) < 0.01 || this.xrSessionActive)) {
           const gps = navigator.getGamepads();
           let leftFound = false;
           let rightFound = false;
@@ -452,19 +495,19 @@
             if (gp.axes.length >= 4) {
               axX = gp.axes[2];
               axY = gp.axes[3];
-            } else {
+            } else if (gp.axes.length >= 2) {
               axX = gp.axes[0];
               axY = gp.axes[1];
             }
 
-            if (hand === 'left' || (!leftFound && !rightFound && this.gpLeftIndex === null)) {
+            if ((hand === 'left' || (!leftFound && !rightFound && this.gpLeftIndex === null)) && !leftFound) {
               rx = axX;
               ry = axY;
               this.gpLeftIndex = i;
               leftFound = true;
               continue;
             }
-            if (hand === 'right' || (!rightFound && i !== this.gpLeftIndex)) {
+            if ((hand === 'right' || (!rightFound && i !== this.gpLeftIndex)) && !rightFound) {
               mx = axX;
               my = axY;
               this.gpRightIndex = i;

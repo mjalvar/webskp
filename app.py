@@ -21,14 +21,21 @@ app.add_middleware(
 UPLOAD_FOLDER = "static/models"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+APP_VERSION = os.getenv("APP_VERSION") or os.getenv("VRTOUR_VERSION") or os.getenv("GIT_SHA") or "dev"
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+
+
+@app.on_event("startup")
+async def startup_event():
+    print(f"[BOOT] app_version={APP_VERSION}")
 
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     """Carga la interfaz del Tour Virtual"""
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse("index.html", {"request": request, "app_version": APP_VERSION})
 
 
 @app.get("/models")
@@ -64,3 +71,17 @@ async def upload_file(file: UploadFile = File(...)):
         if os.path.exists(file_path):
             os.remove(file_path)
         return {"success": False, "error": f"Error al guardar: {str(e)}"}
+
+
+@app.post("/hudlog")
+async def hud_log(request: Request):
+    """Receive HUD debug lines from the client and log them server-side for remote debugging (appears in fly logs)."""
+    try:
+        data = await request.json()
+        text = data.get('text') if isinstance(data, dict) else str(data)
+        # Simple print so it appears in container logs (fly logs)
+        print(f"[VR-HUD-REMOTE] {text}")
+        return JSONResponse({"success": True})
+    except Exception as e:
+        print(f"[VR-HUD-REMOTE] failed to log hud: {e}")
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)

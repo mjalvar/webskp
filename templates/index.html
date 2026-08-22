@@ -6,6 +6,129 @@
   
   <script src="/static/js/aframe.min.js"></script>
   <script src="/static/js/aframe-blink-controls.min.js"></script>
+  <script>
+    // Compatibility polyfills for THREE/AFRAME mismatches (runtime)
+    (function(){
+      function applyPolyfills() {
+        if (!window.THREE) return false;
+
+        // PlaneBufferGeometry -> PlaneGeometry alias
+        if (!THREE.PlaneBufferGeometry && THREE.PlaneGeometry) {
+          THREE.PlaneBufferGeometry = THREE.PlaneGeometry;
+          console.info('Compat: aliased THREE.PlaneBufferGeometry -> THREE.PlaneGeometry');
+        }
+
+        // Polyfill for old BufferAttribute.setDynamic(flag)
+        try {
+          if (THREE.BufferAttribute && !THREE.BufferAttribute.prototype.setDynamic) {
+            THREE.BufferAttribute.prototype.setDynamic = function (isDynamic) {
+              // set dynamic flag for backwards compatibility
+              this.dynamic = !!isDynamic;
+              if (this.setUsage && THREE.DynamicDrawUsage && THREE.StaticDrawUsage) {
+                this.setUsage(isDynamic ? THREE.DynamicDrawUsage : THREE.StaticDrawUsage);
+              }
+              return this;
+            };
+            console.info('Compat: added BufferAttribute.prototype.setDynamic polyfill');
+          }
+        } catch (err) {
+          console.warn('Compat: BufferAttribute polyfill failed', err);
+        }
+
+        // Polyfill for THREE.Math / degToRad compatibility
+        try {
+          if (THREE && !THREE.Math) {
+            THREE.Math = THREE.MathUtils || {};
+            console.info('Compat: aliased THREE.Math -> THREE.MathUtils');
+          }
+          if (THREE && THREE.Math && !THREE.Math.degToRad) {
+            if (THREE.MathUtils && THREE.MathUtils.degToRad) {
+              THREE.Math.degToRad = THREE.MathUtils.degToRad;
+            } else {
+              THREE.Math.degToRad = function (d) { return d * Math.PI / 180; };
+            }
+            console.info('Compat: added THREE.Math.degToRad polyfill');
+          }
+        } catch (err) {
+          console.warn('Compat: THREE.Math polyfill failed', err);
+        }
+
+        // Polyfill for geometry.addAttribute (old API) -> map to setAttribute
+        try {
+          if (THREE.BufferGeometry && !THREE.BufferGeometry.prototype.addAttribute) {
+            THREE.BufferGeometry.prototype.addAttribute = function (name, attribute) {
+              if (typeof this.setAttribute === 'function') {
+                this.setAttribute(name, attribute);
+              } else {
+                this.attributes = this.attributes || {};
+                this.attributes[name] = attribute;
+              }
+              return this;
+            };
+            console.info('Compat: added BufferGeometry.prototype.addAttribute polyfill');
+          }
+          // Also add for legacy Geometry if present
+          if (THREE.Geometry && THREE.Geometry.prototype && !THREE.Geometry.prototype.addAttribute) {
+            THREE.Geometry.prototype.addAttribute = function (name, attribute) {
+              // convert BufferAttribute to array if necessary
+              try {
+                if (attribute && attribute.array) {
+                  this[name] = attribute.array;
+                } else {
+                  this[name] = attribute;
+                }
+              } catch (e) {}
+              return this;
+            };
+            console.info('Compat: added Geometry.prototype.addAttribute polyfill');
+          }
+
+        } catch (err) {
+          console.warn('Compat: addAttribute polyfill failed', err);
+        }
+
+        return true;
+      }
+
+      if (!applyPolyfills()) {
+        var tries = 0;
+        var iv = setInterval(function(){
+          tries++;
+          if (applyPolyfills() || tries > 30) clearInterval(iv);
+        }, 200);
+      }
+    })();
+  </script>
+  <!-- Extras for movement and teleport controls (used by Quest thumbsticks and teleport) -->
+  <script src="/static/js/aframe-extras.min.js"></script>
+  <script>
+    // Intercept AFRAME.registerComponent so we can fix schema defaults
+    // before teleport-controls registers (prevents schema warning).
+    (function () {
+      function wrap() {
+        if (!window.AFRAME || !AFRAME.registerComponent) return false;
+        var orig = AFRAME.registerComponent;
+        AFRAME.registerComponent = function (name, def) {
+          try {
+            if (name === 'teleport-controls' && def && def.schema && def.schema.landingNormal) {
+              var s = def.schema.landingNormal;
+              if (s.type === 'vec3' && typeof s.default === 'string') {
+                s.default = { x: 0, y: 1, z: 0 };
+                console.info('teleport-controls: normalized landingNormal default before registration');
+              }
+            }
+          } catch (e) { console.warn('teleport-controls schema patch failed', e); }
+          return orig.call(this, name, def);
+        };
+        return true;
+      }
+      if (!wrap()) {
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wrap);
+        else wrap();
+      }
+    })();
+  </script>
+  <script src="/static/js/aframe-teleport-controls.min.js"></script>
   
   <style>
     #upload-container {
@@ -64,16 +187,16 @@
 
     <!-- Rig de la cámara y los dos controladores físicos de Meta Quest 3 -->
     
-      <a-camera id="camera" look-controls="pointerLockEnabled: false" position="0 1.6 0"></a-camera>
-      
-      <!-- Mando izquierdo: Rayo láser y teletransportación mediante parábola -->
-      
-      
-      
-      <!-- Mando derecho: Rayo láser y control de rotación / interacción -->
-      
-      
-    
+      <!-- Rig que contiene la cámara y controladores físicos. -->
+      <a-entity id="rig" position="0 1.6 0" movement-controls="fly: false; speed: 0.2" quest-thumbstick-movement="speed: 0.8; verticalSpeed: 0.5">
+        <a-entity id="camera" camera look-controls="pointerLockEnabled: false"></a-entity>
+
+        <!-- Controlador izquierdo: laser + teleport (grip to teleport) -->
+        <a-entity id="leftController" laser-controls="hand: left" teleport-controls="button: grip; collisionEntities: .nav-mesh" raycaster="objects: .nav-mesh, .interactable"></a-entity>
+
+        <!-- Controlador derecho: laser + interaction (trigger to click) -->
+        <a-entity id="rightController" laser-controls="hand: right" raycaster="objects: .interactable"></a-entity>
+      </a-entity>
 
     <a-light type="ambient" color="#FFFFFF" intensity="1.2"></a-light>
     <a-light type="directional" color="#FFFFFF" intensity="0.9" position="-1 3 1"></a-light>
@@ -165,6 +288,187 @@
     });
 
     document.addEventListener('DOMContentLoaded', actualizarCatalogo);
+  </script>
+
+  <script>
+    AFRAME.registerComponent('quest-thumbstick-movement', {
+      schema: {
+        speed: {type: 'number', default: 0.6},
+        verticalSpeed: {type: 'number', default: 0.4},
+        rotationSpeed: {type: 'number', default: 60}, // degrees per second for yaw
+        rotationPitchSpeed: {type: 'number', default: 60} // degrees per second for pitch
+      },
+
+      init: function () {
+        this.rotateAxis = [0, 0];
+        this.moveAxis = [0, 0];
+        this.rig = this.el; // attached to rig entity
+        this.gpLeftIndex = null;
+        this.gpRightIndex = null;
+
+        const left = document.getElementById('leftController');
+        const right = document.getElementById('rightController');
+
+        const onAxis = (evt, target) => {
+          const d = evt && (evt.detail && (evt.detail.axis || evt.detail.axes)) ? (evt.detail.axis || evt.detail.axes) : (evt && evt.axes ? evt.axes : null);
+          if (!d) return;
+          const x = d[0] !== undefined ? d[0] : (d[2] !== undefined ? d[2] : 0);
+          const y = d[1] !== undefined ? d[1] : (d[3] !== undefined ? d[3] : 0);
+          if (target === 'left') this.rotateAxis = [x, y];
+          else this.moveAxis = [x, y];
+        };
+
+        if (left) left.addEventListener('axismove', e => onAxis(e, 'left'));
+        if (right) right.addEventListener('axismove', e => onAxis(e, 'right'));
+
+        // quick flip model with left grip as fallback (only on explicit 'grip' button)
+        const flipModel = () => {
+          const modelEnt = document.querySelector('#escena3d > a-entity[gltf-model]');
+          if (!modelEnt) return;
+          const r = modelEnt.getAttribute('rotation') || {x:0,y:0,z:0};
+          const newRot = {x: (r.x + 180) % 360, y: r.y, z: r.z};
+          modelEnt.setAttribute('rotation', `${newRot.x} ${newRot.y} ${newRot.z}`);
+        };
+        if (left) left.addEventListener('buttondown', (evt) => {
+          try {
+            if (evt && evt.detail && (evt.detail.id === 'grip' || evt.detail.button === 'grip')) {
+              flipModel();
+            }
+          } catch (e) { /* ignore */ }
+        });
+
+        // small on-screen debug overlay to show axes and button states while testing
+        const dbg = document.createElement('div');
+        dbg.id = 'vr-debug-overlay';
+        dbg.style.position = 'fixed';
+        dbg.style.right = '8px';
+        dbg.style.top = '8px';
+        dbg.style.zIndex = '999999';
+        dbg.style.background = 'rgba(0,0,0,0.6)';
+        dbg.style.color = 'white';
+        dbg.style.fontSize = '12px';
+        dbg.style.padding = '6px 8px';
+        dbg.style.borderRadius = '6px';
+        dbg.style.maxWidth = '340px';
+        dbg.style.whiteSpace = 'pre';
+        dbg.style.pointerEvents = 'none';
+        document.body.appendChild(dbg);
+        this.debugEl = dbg;
+
+        // track button states from controller events
+        this.buttonStates = { left: {}, right: {} };
+        const readButtonId = (evt) => {
+          if (!evt || !evt.detail) return (evt && evt.button) || 'unknown';
+          return evt.detail.id || evt.detail.button || (evt.detail.index !== undefined ? String(evt.detail.index) : 'unknown');
+        };
+        if (left) {
+          left.addEventListener('buttondown', (e) => { try { this.buttonStates.left[readButtonId(e)] = true; } catch (e) {} });
+          left.addEventListener('buttonup', (e) => { try { const id = readButtonId(e); delete this.buttonStates.left[id]; } catch (e) {} });
+        }
+        if (right) {
+          right.addEventListener('buttondown', (e) => { try { this.buttonStates.right[readButtonId(e)] = true; } catch (e) {} });
+          right.addEventListener('buttonup', (e) => { try { const id = readButtonId(e); delete this.buttonStates.right[id]; } catch (e) {} });
+        }
+      },
+
+      tick: function (time, delta) {
+        const dt = delta / 1000;
+        const speed = this.data.speed;
+        const rotSpeed = this.data.rotationSpeed;
+        const pitchSpeed = this.data.rotationPitchSpeed;
+
+        let rx = this.rotateAxis[0] || 0; // left stick X -> yaw
+        let ry = this.rotateAxis[1] || 0; // left stick Y -> pitch
+        let mx = this.moveAxis[0] || 0; // right stick X -> strafe
+        let my = this.moveAxis[1] || 0; // right stick Y -> forward/back
+
+        // Fallback: read from navigator.getGamepads() if axes appear zero
+        // WebXR gamepads may expose thumbstick axes at different indices (commonly 2/3).
+        if (Math.abs(rx) < 0.01 && Math.abs(ry) < 0.01 && Math.abs(mx) < 0.01 && Math.abs(my) < 0.01 && navigator.getGamepads) {
+          const gps = navigator.getGamepads();
+          let leftFound = false;
+          let rightFound = false;
+          for (let i = 0; i < gps.length; i++) {
+            const gp = gps[i];
+            if (!gp || !gp.axes) continue;
+
+            const id = (gp.id || '').toLowerCase();
+            const hand = gp.hand || gp.handedness || (id.includes('left') ? 'left' : (id.includes('right') ? 'right' : null));
+
+            // prefer axes 2/3 when available (common for XR gamepads), otherwise 0/1
+            let axX = 0, axY = 0;
+            if (gp.axes.length >= 4) {
+              axX = gp.axes[2];
+              axY = gp.axes[3];
+            } else {
+              axX = gp.axes[0];
+              axY = gp.axes[1];
+            }
+
+            if (hand === 'left' || (!leftFound && !rightFound && this.gpLeftIndex === null)) {
+              rx = axX;
+              ry = axY;
+              this.gpLeftIndex = i;
+              leftFound = true;
+              continue;
+            }
+            if (hand === 'right' || (!rightFound && i !== this.gpLeftIndex)) {
+              mx = axX;
+              my = axY;
+              this.gpRightIndex = i;
+              rightFound = true;
+            }
+          }
+        }
+
+        // Update debug overlay with axes, gamepad indices, and button states
+        if (this.debugEl) {
+          const leftButtons = Object.keys(this.buttonStates.left || {}).length ? Object.keys(this.buttonStates.left).join(',') : 'none';
+          const rightButtons = Object.keys(this.buttonStates.right || {}).length ? Object.keys(this.buttonStates.right).join(',') : 'none';
+          const gpLeft = this.gpLeftIndex !== null && this.gpLeftIndex !== undefined ? this.gpLeftIndex : 'n/a';
+          const gpRight = this.gpRightIndex !== null && this.gpRightIndex !== undefined ? this.gpRightIndex : 'n/a';
+          const modelEnt = document.querySelector('#escena3d > a-entity[gltf-model]');
+          const rot = modelEnt ? (modelEnt.getAttribute('rotation') || {x:0,y:0,z:0}) : {x:0,y:0,z:0};
+          this.debugEl.innerText = `L axes: ${rx.toFixed(2)}, ${ry.toFixed(2)}  (gp:${gpLeft})\nR axes: ${mx.toFixed(2)}, ${my.toFixed(2)}  (gp:${gpRight})\nL buttons: ${leftButtons}\nR buttons: ${rightButtons}\nModel rot: ${rot.x.toFixed(1)}, ${rot.y.toFixed(1)}, ${rot.z.toFixed(1)}`;
+        }
+
+        // Rotate model: yaw and pitch using left stick
+        const modelEnt = document.querySelector('#escena3d > a-entity[gltf-model]');
+        if (modelEnt) {
+          const cur = modelEnt.getAttribute('rotation') || {x:0,y:0,z:0};
+          let newY = cur.y;
+          let newX = cur.x;
+          if (Math.abs(rx) > 0.02) newY = (cur.y - rx * rotSpeed * dt) % 360;
+          if (Math.abs(ry) > 0.02) {
+            // apply pitch (rotation.x). Invert axis so pushing up rotates model upward.
+            newX = cur.x + (-ry) * pitchSpeed * dt;
+            if (newX > 180) newX -= 360;
+            if (newX < -180) newX += 360;
+            // clamp to avoid flipping fully
+            newX = Math.max(-90, Math.min(90, newX));
+          }
+          modelEnt.setAttribute('rotation', `${newX} ${newY} ${cur.z}`);
+        }
+
+        // Movement with right joystick relative to camera yaw
+        if (Math.abs(mx) < 0.02 && Math.abs(my) < 0.02) return;
+
+        const cameraEl = document.getElementById('camera');
+        let yaw = 0;
+        if (cameraEl && cameraEl.object3D) yaw = cameraEl.object3D.rotation.y;
+
+        const forwardX = -Math.sin(yaw);
+        const forwardZ = -Math.cos(yaw);
+        const rightX = Math.cos(yaw);
+        const rightZ = -Math.sin(yaw);
+
+        const moveX = (forwardX * (-my) + rightX * mx) * speed * dt;
+        const moveZ = (forwardZ * (-my) + rightZ * mx) * speed * dt;
+
+        this.rig.object3D.position.x += moveX;
+        this.rig.object3D.position.z += moveZ;
+      }
+    });
   </script>
 </body>
 </html>

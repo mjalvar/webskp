@@ -243,6 +243,17 @@
         const nuevoAsset = document.createElement('a-asset-item');
         nuevoAsset.setAttribute('id', 'modelo-activo');
         nuevoAsset.setAttribute('src', urlModelo);
+        try { nuevoAsset.setAttribute('crossorigin', 'anonymous'); } catch (e) {}
+        // Debug: asset load/start
+        console.info('[SCENE] adding asset', urlModelo);
+        nuevoAsset.addEventListener('loaded', () => {
+          console.info('[SCENE] asset loaded:', urlModelo);
+          try { if (navigator.sendBeacon) navigator.sendBeacon('/hudlog', JSON.stringify({text: '[SCENE] asset loaded: '+urlModelo})); } catch (e){}
+        });
+        nuevoAsset.addEventListener('error', (ev) => {
+          console.error('[SCENE] asset error:', urlModelo, ev);
+          try { fetch('/hudlog', {method:'POST',headers: {'Content-Type':'application/json'}, body: JSON.stringify({text: '[SCENE] asset error: '+urlModelo})}); } catch (e){}
+        });
         almacenRecursos.appendChild(nuevoAsset);
 
         const nuevaEntidad = document.createElement('a-entity');
@@ -250,6 +261,15 @@
         nuevaEntidad.setAttribute('position', '0 0 0');
         nuevaEntidad.setAttribute('rotation', '0 0 0');
         nuevaEntidad.setAttribute('scale', '1 1 1');
+        // Model load/error hooks
+        nuevaEntidad.addEventListener('model-loaded', (ev) => {
+          console.info('[SCENE] model-loaded event for', urlModelo, ev);
+          try { if (navigator.sendBeacon) navigator.sendBeacon('/hudlog', JSON.stringify({text: '[SCENE] model-loaded: '+urlModelo})); } catch (e){}
+        });
+        nuevaEntidad.addEventListener('model-error', (ev) => {
+          console.error('[SCENE] model-error for', urlModelo, ev);
+          try { fetch('/hudlog', {method:'POST',headers: {'Content-Type':'application/json'}, body: JSON.stringify({text: '[SCENE] model-error: '+urlModelo, detail: (ev && ev.detail) || null})}); } catch (e){}
+        });
 
         escena.appendChild(nuevaEntidad);
         alert("¡Listo para las Quest 3! Pulsa el botón inferior derecho 'VR' dentro del navegador de las gafas.");
@@ -288,7 +308,15 @@
       }
     });
 
-    document.addEventListener('DOMContentLoaded', actualizarCatalogo);
+    document.addEventListener('DOMContentLoaded', () => {
+      console.info('[PAGE] DOMContentLoaded, running startup checks');
+      try {
+        const left = document.getElementById('leftController');
+        const right = document.getElementById('rightController');
+        console.info('[PAGE] controllers present?', { left: !!left, right: !!right });
+      } catch (e) { console.warn('[PAGE] controller check failed', e); }
+      actualizarCatalogo();
+    });
   </script>
 
   <script>
@@ -364,8 +392,18 @@
           }
         };
 
-        if (left) left.addEventListener('axismove', e => onAxis(e, 'left'));
-        if (right) right.addEventListener('axismove', e => onAxis(e, 'right'));
+        if (left) {
+          left.addEventListener('axismove', e => { console.debug('[CTRL] left axismove', e && e.detail ? e.detail : e); onAxis(e, 'left'); });
+          left.addEventListener('thumbstickmoved', e => { console.debug('[CTRL] left thumbstickmoved', e && e.detail ? e.detail : e); onAxis(e, 'left'); });
+          left.addEventListener('buttondown', e => { console.debug('[CTRL] left buttondown', e && e.detail ? e.detail : e); });
+          left.addEventListener('buttonup', e => { console.debug('[CTRL] left buttonup', e && e.detail ? e.detail : e); });
+        }
+        if (right) {
+          right.addEventListener('axismove', e => { console.debug('[CTRL] right axismove', e && e.detail ? e.detail : e); onAxis(e, 'right'); });
+          right.addEventListener('thumbstickmoved', e => { console.debug('[CTRL] right thumbstickmoved', e && e.detail ? e.detail : e); onAxis(e, 'right'); });
+          right.addEventListener('buttondown', e => { console.debug('[CTRL] right buttondown', e && e.detail ? e.detail : e); });
+          right.addEventListener('buttonup', e => { console.debug('[CTRL] right buttonup', e && e.detail ? e.detail : e); });
+        }
 
         if (sceneEl) {
           sceneEl.addEventListener('enter-vr', () => { this.xrSessionActive = true; });

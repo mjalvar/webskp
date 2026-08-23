@@ -189,7 +189,7 @@
     <!-- Rig de la cámara y los dos controladores físicos de Meta Quest 3 -->
     
       <!-- Rig que contiene la cámara y controladores físicos. -->
-      <a-entity id="rig" position="0 1.6 0" movement-controls="fly: false; speed: 0.2" quest-thumbstick-movement="speed: 0.8; verticalSpeed: 0.5">
+      <a-entity id="rig" position="0 1.8 0" movement-controls="fly: false; speed: 0.2" quest-thumbstick-movement="speed: 0.8; verticalSpeed: 0.5">
         <a-entity id="camera" camera look-controls="pointerLockEnabled: false"></a-entity>
 
         <!-- Controlador izquierdo: laser + teleport (grip to teleport) -->
@@ -318,7 +318,8 @@
       actualizarCatalogo();
 
       // Floor offset: persisted baseline for rig height (meters)
-      window.floorOffset = parseFloat(localStorage.getItem('floorOffset')) || 1.6;
+      // Raised default because users reported initial height too low
+      window.floorOffset = parseFloat(localStorage.getItem('floorOffset')) || 1.8;
       window.setFloorOffset = function (y) {
         window.floorOffset = Number(y) || 0;
         try { localStorage.setItem('floorOffset', String(window.floorOffset)); } catch (e) {}
@@ -345,7 +346,7 @@
       try {
         const leftCtrl = document.getElementById('leftController');
         const rightCtrl = document.getElementById('rightController');
-        const adjustStep = 0.1;
+        const adjustStep = 0.25;
         if (leftCtrl) leftCtrl.addEventListener('buttondown', (e) => {
           try {
             const detail = e && e.detail ? e.detail : {};
@@ -353,11 +354,11 @@
             // Prefer numeric index when available
             const idx = (detail.index !== undefined && detail.index !== null) ? Number(detail.index) : (detail.buttonIndex !== undefined ? Number(detail.buttonIndex) : null);
             const id = (detail.id || detail.button || null);
-            // Button 4 -> lower 5cm, Button 5 -> raise 5cm
+            // Button 4 -> lower 25cm, Button 5 -> raise 25cm
             if (idx === 4 || String(id) === '4') {
-              setFloorOffset(Math.max(0, window.floorOffset - 0.05));
+              setFloorOffset(Math.max(0, window.floorOffset - 0.25));
             } else if (idx === 5 || String(id) === '5') {
-              setFloorOffset(window.floorOffset + 0.05);
+              setFloorOffset(window.floorOffset + 0.25);
             }
           } catch (err) { console.warn('[FLOOR] left button handler error', err); }
         });
@@ -499,13 +500,13 @@
               const d = evt && evt.detail ? evt.detail : {};
               const idx = (d.index !== undefined && d.index !== null) ? Number(d.index) : (d.buttonIndex !== undefined ? Number(d.buttonIndex) : null);
               const id = (d.id || d.button || null);
-              if (idx === 4 || String(id) === '4') {
-                window.setFloorOffset(Math.max(0, window.floorOffset - 0.05));
-                console.info('[FLOOR] adjusted by button 4 (down)');
-              } else if (idx === 5 || String(id) === '5') {
-                window.setFloorOffset(window.floorOffset + 0.05);
-                console.info('[FLOOR] adjusted by button 5 (up)');
-              }
+                if (idx === 4 || String(id) === '4') {
+                  window.setFloorOffset(Math.max(0, window.floorOffset - 0.25));
+                  console.info('[FLOOR] adjusted by button 4 (down)');
+                } else if (idx === 5 || String(id) === '5') {
+                  window.setFloorOffset(window.floorOffset + 0.25);
+                  console.info('[FLOOR] adjusted by button 5 (up)');
+                }
             } catch (ee) { /* ignore */ }
           } catch (e) { /* ignore */ }
         });
@@ -533,7 +534,31 @@
           return evt.detail.id || evt.detail.button || (evt.detail.index !== undefined ? String(evt.detail.index) : 'unknown');
         };
         if (left) {
-          left.addEventListener('buttondown', (e) => { try { this.buttonStates.left[readButtonId(e)] = true; } catch (e) {} });
+          left.addEventListener('buttondown', (e) => {
+            try {
+              const id = readButtonId(e);
+              this.buttonStates.left[id] = true;
+              // Toggle HUD with left button 12
+              try {
+                const raw = e && e.detail ? e.detail : {};
+                const idx = (raw.index !== undefined && raw.index !== null) ? Number(raw.index) : (raw.buttonIndex !== undefined ? Number(raw.buttonIndex) : null);
+                if (idx === 12 || id === '12') {
+                  if (this.debugEl) this.debugEl.style.display = (this.debugEl.style.display === 'none') ? 'block' : 'none';
+                  if (this.worldDebugEl) {
+                    // toggle world debug by moving it out of view when hiding
+                    try {
+                      const pos = this.worldDebugEl.getAttribute('position') || '0 0 -1';
+                      const parts = String(pos).split(' ').map(Number);
+                      if (parts.length === 3) {
+                        parts[1] = (parts[1] === -99 ? 0 : -99);
+                        this.worldDebugEl.setAttribute('position', parts.join(' '));
+                      }
+                    } catch (ee) {}
+                  }
+                }
+              } catch (ee) {}
+            } catch (e) {}
+          });
           left.addEventListener('buttonup', (e) => { try { const id = readButtonId(e); delete this.buttonStates.left[id]; } catch (e) {} });
         }
         if (right) {
@@ -629,7 +654,8 @@
           const rot = modelEnt ? (modelEnt.getAttribute('rotation') || {x:0,y:0,z:0}) : {x:0,y:0,z:0};
           const cameraEl = document.getElementById('camera');
           const cameraPos = (cameraEl && cameraEl.object3D && cameraEl.object3D.position) ? cameraEl.object3D.position : {x:0,y:0,z:0};
-          const dbgText = `L axes: ${rx.toFixed(2)}, ${ry.toFixed(2)}  (gp:${gpLeft})\nR axes: ${mx.toFixed(2)}, ${my.toFixed(2)}  (gp:${gpRight})\nL buttons: ${leftButtons}\nR buttons: ${rightButtons}\nModel rot: ${rot.x.toFixed(1)}, ${rot.y.toFixed(1)}, ${rot.z.toFixed(1)}\nCamera pos: ${cameraPos.x.toFixed(2)}, ${cameraPos.y.toFixed(2)}, ${cameraPos.z.toFixed(2)}`;
+          const floorLevel = (window && window.floorOffset !== undefined) ? window.floorOffset.toFixed(2) : cameraPos.y.toFixed(2);
+          const dbgText = `Floor level: ${floorLevel} m\nL axes: ${rx.toFixed(2)}, ${ry.toFixed(2)}  (gp:${gpLeft})\nR axes: ${mx.toFixed(2)}, ${my.toFixed(2)}  (gp:${gpRight})\nL buttons: ${leftButtons}\nR buttons: ${rightButtons}\nModel rot: ${rot.x.toFixed(1)}, ${rot.y.toFixed(1)}, ${rot.z.toFixed(1)}\nCamera pos: ${cameraPos.x.toFixed(2)}, ${cameraPos.y.toFixed(2)}, ${cameraPos.z.toFixed(2)}`;
           this.debugEl.innerText = dbgText;
           if (this.worldDebugEl && this.worldDebugEl.setAttribute) {
             try {

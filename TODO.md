@@ -1,0 +1,2 @@
+- Remover teleport
+- Agregar desplazamiento right controller.

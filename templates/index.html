@@ -561,7 +561,9 @@
           const gpRight = this.gpRightIndex !== null && this.gpRightIndex !== undefined ? this.gpRightIndex : 'n/a';
           const modelEnt = document.querySelector('#escena3d > a-entity[gltf-model]');
           const rot = modelEnt ? (modelEnt.getAttribute('rotation') || {x:0,y:0,z:0}) : {x:0,y:0,z:0};
-          const dbgText = `L axes: ${rx.toFixed(2)}, ${ry.toFixed(2)}  (gp:${gpLeft})\nR axes: ${mx.toFixed(2)}, ${my.toFixed(2)}  (gp:${gpRight})\nL buttons: ${leftButtons}\nR buttons: ${rightButtons}\nModel rot: ${rot.x.toFixed(1)}, ${rot.y.toFixed(1)}, ${rot.z.toFixed(1)}`;
+          const cameraEl = document.getElementById('camera');
+          const cameraPos = (cameraEl && cameraEl.object3D && cameraEl.object3D.position) ? cameraEl.object3D.position : {x:0,y:0,z:0};
+          const dbgText = `L axes: ${rx.toFixed(2)}, ${ry.toFixed(2)}  (gp:${gpLeft})\nR axes: ${mx.toFixed(2)}, ${my.toFixed(2)}  (gp:${gpRight})\nL buttons: ${leftButtons}\nR buttons: ${rightButtons}\nModel rot: ${rot.x.toFixed(1)}, ${rot.y.toFixed(1)}, ${rot.z.toFixed(1)}\nCamera pos: ${cameraPos.x.toFixed(2)}, ${cameraPos.y.toFixed(2)}, ${cameraPos.z.toFixed(2)}`;
           this.debugEl.innerText = dbgText;
           if (this.worldDebugEl && this.worldDebugEl.setAttribute) {
             try {

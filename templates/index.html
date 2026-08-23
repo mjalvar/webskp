@@ -316,6 +316,59 @@
         console.info('[PAGE] controllers present?', { left: !!left, right: !!right });
       } catch (e) { console.warn('[PAGE] controller check failed', e); }
       actualizarCatalogo();
+
+      // Floor offset: persisted baseline for rig height (meters)
+      window.floorOffset = parseFloat(localStorage.getItem('floorOffset')) || 1.6;
+      window.setFloorOffset = function (y) {
+        window.floorOffset = Number(y) || 0;
+        try { localStorage.setItem('floorOffset', String(window.floorOffset)); } catch (e) {}
+        const rig = document.getElementById('rig');
+        if (rig && rig.object3D) {
+          rig.object3D.position.y = window.floorOffset;
+        } else if (rig) {
+          rig.setAttribute('position', `0 ${window.floorOffset} 0`);
+        }
+        console.info('[FLOOR] setFloorOffset', window.floorOffset);
+        try { if (navigator.sendBeacon) navigator.sendBeacon('/hudlog', JSON.stringify({text: '[FLOOR] setFloorOffset: '+window.floorOffset})); } catch (e){}
+        // update debug world text if present
+        try {
+          const worldDbg = document.getElementById('vr-debug-world');
+          if (worldDbg && worldDbg.setAttribute) {
+            worldDbg.setAttribute('text', 'value: Floor offset: ' + window.floorOffset.toFixed(2) + '; color: #FFF; width: 1.6; align: center');
+          }
+        } catch (e) {}
+      }
+      // apply baseline immediately
+      window.setFloorOffset(window.floorOffset);
+
+      // Hook controller buttons for quick in-VR floor adjustment
+      try {
+        const leftCtrl = document.getElementById('leftController');
+        const rightCtrl = document.getElementById('rightController');
+        const adjustStep = 0.1;
+        if (leftCtrl) leftCtrl.addEventListener('buttondown', (e) => {
+          try {
+            const detail = e && e.detail ? e.detail : {};
+            console.debug('[FLOOR] left buttondown', detail);
+            // Prefer numeric index when available
+            const idx = (detail.index !== undefined && detail.index !== null) ? Number(detail.index) : (detail.buttonIndex !== undefined ? Number(detail.buttonIndex) : null);
+            const id = (detail.id || detail.button || null);
+            // Button 4 -> lower 5cm, Button 5 -> raise 5cm
+            if (idx === 4 || String(id) === '4') {
+              setFloorOffset(Math.max(0, window.floorOffset - 0.05));
+            } else if (idx === 5 || String(id) === '5') {
+              setFloorOffset(window.floorOffset + 0.05);
+            }
+          } catch (err) { console.warn('[FLOOR] left button handler error', err); }
+        });
+        if (rightCtrl) rightCtrl.addEventListener('buttondown', (e) => {
+          try {
+            const id = (e && e.detail && (e.detail.id || e.detail.button)) || '';
+            // right grip decreases floor (lower camera)
+            if (id === 'grip') { setFloorOffset(Math.max(0, window.floorOffset - adjustStep)); }
+          } catch (err) { }
+        });
+      } catch (e) { console.warn('[FLOOR] controller hook failed', e); }
     });
   </script>
 
@@ -441,6 +494,19 @@
             if (evt && evt.detail && (evt.detail.id === 'grip' || evt.detail.button === 'grip')) {
               flipModel();
             }
+            // Also support button index mapping for floor adjustment (left controller)
+            try {
+              const d = evt && evt.detail ? evt.detail : {};
+              const idx = (d.index !== undefined && d.index !== null) ? Number(d.index) : (d.buttonIndex !== undefined ? Number(d.buttonIndex) : null);
+              const id = (d.id || d.button || null);
+              if (idx === 4 || String(id) === '4') {
+                window.setFloorOffset(Math.max(0, window.floorOffset - 0.05));
+                console.info('[FLOOR] adjusted by button 4 (down)');
+              } else if (idx === 5 || String(id) === '5') {
+                window.setFloorOffset(window.floorOffset + 0.05);
+                console.info('[FLOOR] adjusted by button 5 (up)');
+              }
+            } catch (ee) { /* ignore */ }
           } catch (e) { /* ignore */ }
         });
 
